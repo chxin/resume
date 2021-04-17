@@ -1,0 +1,155 @@
+//评测题目: 无
+你好
+
+
+1.	FPGA有哪些资源；？和其他处理平台相比，特点是什么？目前最新的器件发展趋势是什么？
+	答：（1）FPGA的资源可以分为三大类：一是计算逻辑单元，由LUT、MUX、FF、进位链等组成。
+    		二是IO资源。三是布线资源。
+            在FPGA也可以集成PLL，RAM，SOC等，这些属于可选资源
+       （2） CPU是单指令单数据，GPU是多数据单指令，FPGA是多数据多指令
+       		和CPU平台相比，FPGA的特点是并行化，可编程硬件，同步时序方式处理而非顺序处理。
+       		和GPU平台相比，FPGA的特点是硬件可编程。
+            和ASIC，CPLD平台相比，FPGA具有更多的时序资源，但有较少的逻辑资源，
+            同时其逻辑单元的实现基于查找表。
+        （3）发展趋势：在FPGA硬件实现的方向，低功耗，高稳定性，高集成化，3D FPGA模型，优化建立保持时间。
+        	在应用方向，高处理速率，与HIP或硬宏集成，提高数据运算能力。
+            在开发方面，优化布局布线。
+    
+
+2.	关于跨时钟域下面说法正确的是（2）： （和面试官沟通是多选题吗？）
+1 异步时钟之间无法做时序约束，所以跨时钟域的路径要设置false path约束
+2 跨时钟域常用方法是用异步fifo
+3 寄存器的异步复位pin由于是异步的，所以不需要做时序分析（释放的时候）
+4 异步信号通过一级寄存器同步化后可降低产生亚稳态的概率
+
+
+4.	编程：检测1101110序列
+	module detector(input bit_in, input clk, input rst_n, output reg ret);
+		parameter state_idle = 8'b00000001;
+        parameter state_1 = 8'b00000010;
+        parameter state_2 = 8'b00000100;
+        parameter state_3 = 8'b00001000;
+        parameter state_4 = 8'b00010000;
+        parameter state_5 = 8'b00100000;
+        parameter state_6 = 8'b01000000;
+        parameter state_7 = 8'b10000000;
+        
+        reg [7:0] cur_state;
+		reg [7:0] next_state;
+		always @(posedge clk or negedge rst_n) begin
+        	if(!rst_n) begin
+            	cur_state <= state_idle;
+            end else begin
+            	cur_state <= next_state;
+            end
+        end
+        
+        always @ (*) begin
+        	case(cur_state)
+              state_idle: if(bit_in == 1'b1) next_state = state_2;
+                          else next_state = state_1;
+              state_1: if(bit_in == 1'b1) next_state = state_2;
+                       	  else next_state = state_1;
+              state_2: if(bit_in == 1'b1) next_state = state_3;
+                       	  else next_state = state_1;
+              state_3: if(bit_in == 1'b0) next_state = state_4;
+                       	  else next_state = state_3; // 检查一下
+              state_4: if(bit_in == 1'b1) next_state = state_5;
+                       	  else next_state = state_1;
+              state_5: if(bit_in == 1'b1) next_state = state_6;
+                       	  else next_state = state_1;
+              state_6: if(bit_in == 1'b1) next_state = state_6;
+                       	  else next_state = state_4; // 检查一下
+              state_7: if(bit_in == 1'b0) next_state = state_1； // 有两种选择？
+                       	  else next_state = state_3;  // 检查一下 
+              default: next_state = state_idle;
+        end
+        
+        always @ (posedge clk or negedge rst_n) begin
+        	if(!rst_n) begin
+            	ret <= 1'b0;
+            end else begin
+            	if(next_state == state_7 && bit_in == 1'b1) 
+                   ret <= 1'b1;
+              	else
+                   ret <= 1'b0;
+            end
+        end
+    endmodule
+    
+    
+5.	编程：用verilog 实现一个异步FIFO，带full/empty以及almost full/empty
+	module( input clk1, input clk2, input read, input read, input reg [D:0] data_in, output reg [D:0] data_out);
+        
+      	// 异步信号同步释放
+        reg read_reg1;
+        reg read_reg2;
+        always @ (posedge clk1) begin
+        	read_reg1 <= read;
+            read_reg2 <= read_reg1;
+      	end
+        
+        reg write_reg1;
+        reg write_reg2;
+        always @ (posedge clk2) begin
+        	write_reg1 <= write;
+            write_reg2 <= write_reg1;
+      	end
+        
+        // 更新读地址和写地址
+        reg [N:0] wr_addr;
+    	reg [M:0] rd_addr;
+        always @ (posedge clk1) begin
+        	if(read_reg2) begin
+                   rd_addr <= rd_addr + 1;
+                   data_out <= fifo[rd_addr];
+            end else begin
+                   rd_addr <= rd_addr;
+                   data_out <= 0;
+          	end
+        end
+        
+        always @ (posedge clk2) begin
+        	if(write_reg2) begin
+                   wr_addr <= wr_addr + 1;
+                   fifo[wr_addr] <= data_in;
+            end else begin
+                   wr_addr <= wr_addr;
+            end
+        end
+        
+        // 判断满
+        reg full;
+        always @ (posedge clk2) begin
+        	if(write_reg2) begin
+        		if(wr_addr + 1 == rd_addr) begin
+                	full <= 1'b1;
+                end else begin
+                	if(wr_addr == rd_add) begin
+                    	full <= full;
+                    end else begin
+                    	full <= 1'b0;
+                   end
+                end
+            end
+        end
+        
+        // 判断空
+        reg empty;
+        always @ (posedge clk1)
+    		if(read_reg2) begin
+        		if(rd_addr + 1 == wr_addr) begin
+                	empty <= 1'b1;
+                end else begin
+                	if(wr_addr == rd_add) begin
+                    	empty <= empty;
+                    end else begin
+                    	empty <= 1'b0;
+                   end
+                end
+            end
+        end
+    endmodule
+    
+    
+                   
